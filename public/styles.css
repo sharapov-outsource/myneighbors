@@ -1,0 +1,19 @@
+/* ==========================================================================
+   myneighbors — the little the shared stylesheet does not already draw.
+   ========================================================================== */
+
+/* Host names and addresses read left to right whatever the interface language,
+   and a long list of them must wrap rather than widen the table. */
+.name-cell { font-family: var(--font-mono); direction: ltr; unicode-bidi: plaintext;
+  word-break: break-word }
+
+/* The row for the address that was actually asked about, in a table of its
+   neighbours. Marking it is the difference between a list and an answer. */
+.table tr.self > td { background: var(--brand-tint) }
+.table tr.self > td:first-child { box-shadow: inset 2px 0 0 var(--brand) }
+
+/* Where a name came from — several per row, so they have to stay small. */
+.chip + .chip { margin-inline-start: .25rem }
+
+/* A neighbour that answered but has nothing else to say. */
+.table td.muted { color: var(--ink-faint) }

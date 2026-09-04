@@ -1,0 +1,35 @@
+{
+  "name": "myneighbors",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "homepage": "https://myneighbors.sharapov.biz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sharapov-outsource/myneighbors.git"
+  },
+  "bugs": "https://github.com/sharapov-outsource/myneighbors/issues",
+  "description": "Everything else living at an address and in the block around it: reverse DNS, certificate names, registry and routing, each name confirmed against DNS",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "icons": "node scripts/make-icons.js",
+    "check:i18n": "node scripts/check-i18n.js",
+    "check:syntax": "node --check public/app.js && node --check public/i18n.js && node --check server/index.js && node --check server/scan.js && node --check server/cidr.js && node --check server/target.js && node --check server/block.js && node --check server/reverse.js && node --check server/probe.js && node --check server/pool.js && node --check server/upstream.js && node --check server/passive.js && node --check server/verify.js",
+    "test:unit": "node --test \"test/*.test.js\"",
+    "smoke": "node scripts/smoke.js",
+    "test": "npm run check:syntax && npm run check:i18n && npm run test:unit && npm run smoke"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^10.2.2",
+    "@fastify/static": "^10.1.2",
+    "@sharapov/dns-wire": "git+https://github.com/sharapov-outsource/dns-wire.git#v1.0.0",
+    "@sharapov/service-kit": "git+https://github.com/sharapov-outsource/service-kit.git#v1.4.6",
+    "fastify": "^5.2.1",
+    "yaml": "^2.7.0"
+  }
+}

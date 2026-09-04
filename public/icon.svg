@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Neighbors Check">
+  <rect width="1024" height="1024" rx="336" fill="#14110c"/>
+  <rect fill="#f6f1e6" x="200" y="200" width="168" height="168" rx="52"/>
+  <rect fill="#f6f1e6" x="428" y="200" width="168" height="168" rx="52"/>
+  <rect fill="#f6f1e6" x="656" y="200" width="168" height="168" rx="52"/>
+  <rect fill="#f6f1e6" x="200" y="428" width="168" height="168" rx="52"/>
+  <rect fill="#9d9dfb" x="428" y="428" width="168" height="168" rx="52"/>
+  <rect fill="#f6f1e6" x="656" y="428" width="168" height="168" rx="52"/>
+  <rect fill="#f6f1e6" x="200" y="656" width="168" height="168" rx="52"/>
+  <rect fill="#f6f1e6" x="428" y="656" width="168" height="168" rx="52"/>
+  <rect fill="#f6f1e6" x="656" y="656" width="168" height="168" rx="52"/>
+</svg>
