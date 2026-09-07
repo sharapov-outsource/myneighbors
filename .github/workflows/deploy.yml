@@ -7,16 +7,10 @@
 
 name: myneighbors CI/CD
 
-# Deployment is not switched on yet: there is no server, no DNS record and no
-# Prod environment for this service. Until there is, the workflow runs only when
-# somebody starts it by hand — restore the `push` trigger below to arm it.
-#
-# on:
-#   push:
-#     branches:
-#       - main
-
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:
