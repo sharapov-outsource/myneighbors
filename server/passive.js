@@ -82,7 +82,11 @@ export const PROVIDERS = [
     async fetch(address) {
       const data = await getJson(
         `https://api.shodan.io/shodan/host/${address}?key=${encodeURIComponent(process.env.SHODAN_API_KEY)}`);
-      return clean([...(data?.hostnames || []), ...(data?.domains || [])]);
+      /* No answer — an expired key, a rate limit, an outage — must not be
+         reported as an empty one. The report would say "nothing else is hosted
+         here" and name the provider as the source of that. */
+      if (!data) return null;
+      return clean([...(data.hostnames || []), ...(data.domains || [])]);
     },
   },
   {
@@ -101,11 +105,11 @@ export const PROVIDERS = [
           },
           body: JSON.stringify({ filter: { ipv4: address } }),
         });
-        if (!response.ok) return [];
+        if (!response.ok) return null;
         const data = await response.json();
         return clean((data?.records || []).map(record => record.hostname));
       } catch {
-        return [];
+        return null;
       }
     },
   },
@@ -116,7 +120,8 @@ export const PROVIDERS = [
     async fetch(address) {
       const data = await getJson('https://api.viewdns.info/reverseip/' +
         `?host=${address}&t=1&apikey=${encodeURIComponent(process.env.VIEWDNS_API_KEY)}&output=json`);
-      return clean((data?.response?.domains || []).map(entry => entry.name || entry));
+      if (!data) return null;
+      return clean((data.response?.domains || []).map(entry => entry.name || entry));
     },
   },
 ];
@@ -183,12 +188,18 @@ export async function expandFromCt(names) {
   let used = false;
 
   for (const apex of apexes) {
+    /* The cap ends the widening rather than the row being read: past it there
+       is nothing left to collect, and each remaining apex is another crt.sh
+       request against an already tight scan budget. */
+    if (found.size >= CT_LIMIT) break;
+
     const rows = await getJson(`https://crt.sh/?q=${encodeURIComponent('%.' + apex)}&output=json`,
       { timeout: 12000 });
     if (!Array.isArray(rows)) continue;
     used = true;
 
     for (const row of rows) {
+      if (found.size >= CT_LIMIT) break;
       for (const candidate of clean(String(row?.name_value || '').split('\n'))) {
         if (candidate.startsWith('*.')) continue;      // a wildcard is not a site
         if (found.size >= CT_LIMIT) break;

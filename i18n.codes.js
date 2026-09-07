@@ -33,7 +33,8 @@ export default function codes(root) {
     nst: ['confirmed', 'in-block', 'moved', 'unresolved', 'wildcard', 'unchecked'],
     bsrc: ['registry', 'routing', 'conventional', 'requested'],
     src: ['ptr', 'certificate', 'redirect', 'ct', ...providers],
-    inc: ['registry', 'routing', 'sweep', 'certificates', 'reverse-ip', 'verification-truncated'],
+    inc: ['registry', 'routing', 'sweep', 'certificates', 'reverse-ip',
+      'verification', 'verification-truncated'],
     err: [
       'invalid-host', 'domain-expected', 'invalid-port', 'port-not-allowed', 'dns-failed',
       'private-address', 'unreachable', 'scan-timeout', 'stage-timeout', 'scan-failed',

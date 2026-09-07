@@ -17,12 +17,12 @@
  * moved away years ago, confidently.
  */
 
-import { flag, sortFlags, incomplete as collectIncomplete, withDeadline, isPrivateAddress, allowPrivate }
+import { flag, sortFlags, incomplete as collectIncomplete, withDeadline, timed, isPrivateAddress, allowPrivate }
   from '@sharapov/service-kit';
 import { TYPE, query, defaultResolver } from '@sharapov/dns-wire';
 
 import { parseIp, enumerate } from './cidr.js';
-import { MAX_HOSTS } from './target.js';
+import { MAX_HOSTS, checkPrefix } from './target.js';
 import { resolveBlock, membership } from './block.js';
 import { sweepPtr } from './reverse.js';
 import { probeBlock } from './probe.js';
@@ -31,7 +31,32 @@ import { verifyNames } from './verify.js';
 
 export const STAGES = ['resolve', 'block', 'reverse', 'certificates', 'passive', 'verify', 'summary'];
 
-const SCAN_TIMEOUT = Number(process.env.SCAN_TIMEOUT_MS || 90000);
+/**
+ * Budgets.
+ *
+ * The stages that walk a block are bounded by arithmetic, not by hope: a /24 at
+ * twelve connections a time with a six-second deadline is twenty-two rounds, so
+ * a block that silently drops every packet costs a little over two minutes with
+ * nothing to show for it. An outer deadline alone turns that into a 504 — the
+ * whole report thrown away because one stage was slow.
+ *
+ * So each expensive stage gets its own budget and the report survives losing
+ * one. A stage that runs out of time contributes what the kit's rule asks for:
+ * a code in `incomplete`, and no pretence that its silence meant "nothing here".
+ * The outer deadline stays as a ceiling above their sum, for the case where
+ * something goes wrong that no stage budget describes.
+ */
+const BUDGET = {
+  block: Number(process.env.BLOCK_BUDGET_MS || 15000),
+  reverse: Number(process.env.REVERSE_BUDGET_MS || 30000),
+  certificates: Number(process.env.PROBE_BUDGET_MS || 45000),
+  passive: Number(process.env.PASSIVE_BUDGET_MS || 30000),
+  verify: Number(process.env.VERIFY_BUDGET_MS || 30000),
+};
+
+const SCAN_TIMEOUT = Number(process.env.SCAN_TIMEOUT_MS ||
+  Object.values(BUDGET).reduce((sum, ms) => sum + ms, 0) + 15000);
+
 const PROBING = process.env.PROBE_ENABLED !== 'false';
 
 /**
@@ -62,11 +87,23 @@ async function run(target, { onProgress = () => {}, query: params = {} } = {}) {
   if (!allowPrivate() && isPrivateAddress(ip.text)) {
     throw Object.assign(new Error('private-address'), { code: 'private-address', status: 403 });
   }
+  /* A prefix that arrived with a name could not be checked against an address
+     family before now, because there was no address. */
+  const badPrefix = checkPrefix(ip.version, target.prefix);
+  if (badPrefix) throw Object.assign(new Error(badPrefix), { code: badPrefix, status: 400 });
+
   progress('resolve', { done: true, address: ip.text });
 
   /* ---------------- which block ---------------- */
   progress('block');
-  const block = await resolveBlock(ip, { wanted: target.prefix });
+  const blockStage = await timed('block', () => resolveBlock(ip, { wanted: target.prefix }),
+    { timeoutMs: BUDGET.block });
+  /* Losing this one loses the whole report: without a block there is nothing to
+     walk and nothing to describe. */
+  if (!blockStage.ok) {
+    throw Object.assign(new Error('stage-timeout'), { code: 'stage-timeout', status: 504 });
+  }
+  const block = blockStage.value;
   if (!block.registry) missing.push('registry');
   if (!block.routing) missing.push('routing');
   progress('block', { done: true, cidr: block.chosen.cidr });
@@ -82,7 +119,10 @@ async function run(target, { onProgress = () => {}, query: params = {} } = {}) {
 
   /* ---------------- reverse DNS across the block ---------------- */
   progress('reverse', { addresses: addresses?.length || 0 });
-  const ptr = addresses ? await sweepPtr(addresses) : new Map();
+  const reverseStage = await timed('reverse', () => (addresses ? sweepPtr(addresses) : new Map()),
+    { timeoutMs: BUDGET.reverse });
+  const ptr = reverseStage.ok ? reverseStage.value : new Map();
+  if (!reverseStage.ok) missing.push('sweep');
   progress('reverse', { done: true, found: ptr.size });
 
   /* ---------------- one connection per address ---------------- */
@@ -93,7 +133,10 @@ async function run(target, { onProgress = () => {}, query: params = {} } = {}) {
   }
 
   progress('certificates', { addresses: probing ? addresses.length : 0 });
-  const probes = probing ? await probeBlock(addresses) : [];
+  const probeStage = await timed('certificates', () => (probing ? probeBlock(addresses) : []),
+    { timeoutMs: BUDGET.certificates });
+  const probes = probeStage.ok ? probeStage.value : [];
+  if (!probeStage.ok) missing.push('certificates');
   progress('certificates', { done: true, responded: probes.length });
 
   /* ---------------- what somebody else's index knows ---------------- */
@@ -113,22 +156,30 @@ async function run(target, { onProgress = () => {}, query: params = {} } = {}) {
 
   /* A CDN edge is exempt: the indexes would answer, and the answer would be
      a meaningless slice of a very long list. */
-  const passive = cdn ? { names: new Map(), used: [], failed: [] } : await reverseIp(ip.text);
-  for (const [name, sources] of passive.names) sources.forEach(source => add(name, source));
-  if (!passive.used.length && !cdn) missing.push('reverse-ip');
+  const NOTHING = { passive: { names: new Map(), used: [], failed: [] }, ct: { names: new Map(), used: false } };
+  const passiveStage = cdn ? { ok: true, value: NOTHING } : await timed('passive', async () => {
+    const reverse = await reverseIp(ip.text);
+    for (const [name, sources] of reverse.names) sources.forEach(source => add(name, source));
 
-  /* Certificate transparency widens the names already found rather than
-     discovering one, so it only runs when there is something to widen. */
-  const ownNames = [...seeds.keys()].filter(name => !name.startsWith('*.'));
-  const ct = ownNames.length && !cdn
-    ? await expandFromCt(ownNames)
-    : { names: new Map(), used: false };
+    /* Certificate transparency widens the names already found rather than
+       discovering one, so it only runs when there is something to widen. */
+    const ownNames = [...seeds.keys()].filter(name => !name.startsWith('*.'));
+    const widened = ownNames.length ? await expandFromCt(ownNames) : { names: new Map(), used: false };
+    return { passive: reverse, ct: widened };
+  }, { timeoutMs: BUDGET.passive });
+
+  const { passive, ct } = passiveStage.ok ? passiveStage.value : NOTHING;
   for (const name of ct.names.keys()) add(name, 'ct');
+  if (!passive.used.length && !cdn) missing.push('reverse-ip');
   progress('passive', { done: true, candidates: seeds.size });
 
   /* ---------------- forward confirmation ---------------- */
   progress('verify', { candidates: seeds.size });
-  const verified = await verifyNames(seeds.keys(), { address: ip.text, block: block.chosen });
+  const verifyStage = await timed('verify',
+    () => verifyNames(seeds.keys(), { address: ip.text, block: block.chosen }),
+    { timeoutMs: BUDGET.verify });
+  const verified = verifyStage.ok ? verifyStage.value : { results: [], truncated: 0 };
+  if (!verifyStage.ok) missing.push('verification');
   if (verified.truncated) missing.push('verification-truncated');
   progress('verify', { done: true, checked: verified.results.length });
 

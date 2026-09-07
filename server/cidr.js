@@ -66,7 +66,17 @@ function formatV4(bits) {
   return [24n, 16n, 8n, 0n].map(shift => Number((bits >> shift) & 0xffn)).join('.');
 }
 
+/** ::ffff:0:0/96 — the range that carries an IPv4 address inside a v6 one. */
+const V4_MAPPED_PREFIX = 0xffffn;
+
 function formatV6(bits) {
+  /* RFC 5952 §5: an IPv4-mapped address is written with its last four bytes
+     dotted. That is not only convention — the shared private-address guard
+     recognises these by the dotted tail, and without it every ::ffff:a.b.c.d
+     falls through to its "unknown, therefore private" branch and the address
+     is refused. */
+  if (bits >> 32n === V4_MAPPED_PREFIX) return `::ffff:${formatV4(bits & 0xffffffffn)}`;
+
   const groups = [];
   for (let shift = 112n; shift >= 0n; shift -= 16n) groups.push(Number((bits >> shift) & 0xffffn).toString(16));
 
@@ -89,8 +99,9 @@ export function parseCidr(text) {
   const ip = parseIp(address);
   if (!ip) return null;
   const max = ip.version === 4 ? V4_MAX : V6_MAX;
+  if (length !== undefined && !/^\d+$/.test(length)) return null;
   const prefix = length === undefined ? max : BigInt(length);
-  if (!/^\d+$/.test(String(length ?? '0')) || prefix > max) return null;
+  if (prefix > max) return null;
   return network(ip, prefix);
 }
 

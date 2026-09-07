@@ -65,6 +65,14 @@ export function parseNeighborTarget(raw, req) {
   if (net.isIP(value)) return addressTarget(value, wanted?.prefix);
 
   if (value.length > 253 || !HOSTNAME.test(value)) return { error: 'invalid-host' };
+
+  /* A name has no address family until it resolves, so only the family-agnostic
+     half of the rule can be applied here. The rest runs in the scan, once there
+     is an address to apply it to — without this the name path accepted prefixes
+     the address path refuses, and /example.com?prefix=200 produced a block with
+     a negative size that the sweep then reported as complete. */
+  if (wanted?.prefix !== undefined && wanted.prefix > 128) return { error: 'invalid-prefix' };
+
   return {
     kind: 'host',
     host: value,
@@ -72,6 +80,19 @@ export function parseNeighborTarget(raw, req) {
     key: keyFor(value, wanted?.prefix),
     label: labelFor(value, wanted?.prefix),
   };
+}
+
+/**
+ * The prefix rule, for an address whose family is known.
+ * @returns {string|null} an error code, or null when the prefix is usable
+ */
+export function checkPrefix(version, prefix) {
+  if (prefix === undefined) return null;
+  if (prefix > (version === 4 ? 32 : 128)) return 'invalid-prefix';
+  /* A prefix wider than the cap cannot be walked, and quietly narrowing it
+     would answer a different question from the one that was asked. */
+  if (version === 4 && prefix < MIN_V4_PREFIX) return 'block-too-large';
+  return null;
 }
 
 function prefixFrom(raw) {
@@ -85,13 +106,8 @@ function addressTarget(address, prefix) {
   if (!ip) return { error: 'invalid-host' };
   if (!allowPrivate() && isPrivateAddress(ip.text)) return { error: 'private-address' };
 
-  const max = ip.version === 4 ? 32 : 128;
-  if (prefix !== undefined) {
-    if (prefix > max) return { error: 'invalid-prefix' };
-    /* A prefix wider than the cap cannot be walked, and quietly narrowing it
-       would answer a different question from the one that was asked. */
-    if (ip.version === 4 && prefix < MIN_V4_PREFIX) return { error: 'block-too-large' };
-  }
+  const bad = checkPrefix(ip.version, prefix);
+  if (bad) return { error: bad };
 
   return {
     kind: 'ip',

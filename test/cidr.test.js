@@ -6,6 +6,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { isPrivateAddress } from '@sharapov/service-kit';
+
 import { parseIp, formatIp, parseCidr, network, contains, enumerate, arpaName }
   from '../server/cidr.js';
 
@@ -29,10 +31,17 @@ test('parses IPv6 in every spelling it actually turns up in', () => {
   }
 });
 
-test('an IPv4-mapped address keeps its value through a round trip', () => {
+test('an IPv4-mapped address keeps its dotted tail', () => {
   const mapped = parseIp('::ffff:1.2.3.4');
   assert.equal(mapped.version, 6);
+  assert.equal(mapped.text, '::ffff:1.2.3.4');
   assert.equal(formatIp(mapped.bits, 6), mapped.text);
+
+  /* Not cosmetic: the shared private-address guard recognises these by the
+     dotted tail, and printing ::ffff:102:304 instead sent every IPv4-mapped
+     address down its "unknown, therefore private" branch. */
+  assert.equal(isPrivateAddress(parseIp('::ffff:8.8.8.8').text), false);
+  assert.equal(isPrivateAddress(parseIp('::ffff:10.0.0.1').text), true);
 });
 
 test('RFC 5952 compression: the longest run of zeroes, leftmost on a tie', () => {
@@ -60,6 +69,12 @@ test('a bare address is a host prefix', () => {
 test('a prefix longer than the address family is refused', () => {
   assert.equal(parseCidr('8.8.8.8/33'), null);
   assert.equal(parseCidr('2001:db8::/129'), null);
+});
+
+test('a prefix that is not a number is refused rather than thrown on', () => {
+  for (const bad of ['1.2.3.4/2a', '1.2.3.4/x', '1.2.3.4/', '1.2.3.4/-1', '1.2.3.4/ 24']) {
+    assert.equal(parseCidr(bad), null, bad);
+  }
 });
 
 test('containment is exclusive to the family', () => {

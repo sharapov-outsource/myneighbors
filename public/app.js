@@ -169,8 +169,14 @@ function startCheck(input, { refresh = false } = {}) {
   setProgress('resolve');
   updateSeoMeta();
 
-  const url = `/api/stream/${encodeURIComponent(input)}?lang=${encodeURIComponent(LANG)}${
-    refresh ? '&refresh=1' : ''}`;
+  /* Whatever modifies the check — ?probe=false, ?prefix=28 — is part of the
+     URL somebody shared, so it has to reach the stream. Dropping it made the
+     page run a different check from the one the same URL gives the API, and
+     ?probe=false in particular is the difference between a sweep and no sweep. */
+  const query = new URLSearchParams(location.search);
+  query.set('lang', LANG);
+  if (refresh) query.set('refresh', '1');
+  const url = `/api/stream/${encodeURIComponent(input)}?${query}`;
   const stream = new EventSource(url);
   STREAM = stream;
 

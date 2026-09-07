@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseNeighborTarget, MAX_HOSTS } from '../server/target.js';
+import { parseNeighborTarget, checkPrefix, MAX_HOSTS } from '../server/target.js';
 
 const parse = (raw, query) => parseNeighborTarget(raw, query ? { query } : undefined);
 
@@ -95,6 +95,21 @@ test('the guard can be lifted for tests, and only by the environment', () => {
     else process.env.ALLOW_PRIVATE_TARGETS = previous;
   }
   assert.equal(parse('127.0.0.1').error, 'private-address', 'and it comes back');
+});
+
+test('the prefix rule is the same whether a name or an address was given', () => {
+  /* A name has no address family until it resolves, so the parser can only
+     apply the family-agnostic half and the scan applies the rest. What must
+     not happen is the name path accepting what the address path refuses. */
+  assert.equal(parse('example.com', { prefix: '200' }).error, 'invalid-prefix');
+  assert.equal(parse('8.8.8.8', { prefix: '200' }).error, 'invalid-prefix');
+
+  const widest = 32 - Math.floor(Math.log2(MAX_HOSTS));
+  assert.equal(parse('example.com', { prefix: String(widest - 1) }).prefix, widest - 1,
+    'accepted here, because the family is still unknown');
+  assert.equal(checkPrefix(4, widest - 1), 'block-too-large', 'and refused once it is known');
+  assert.equal(checkPrefix(6, widest - 1), null, 'the same prefix is fine for v6');
+  assert.equal(checkPrefix(4, undefined), null, 'no prefix is not a bad prefix');
 });
 
 test('junk is refused', () => {
