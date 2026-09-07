@@ -138,6 +138,7 @@ jobs:
               -e PORT=$PORT \
               -e TRUST_PROXY=true \
               -e HSTS=true \
+              -e METRIKA_ID=112340288 \
               $ENV_FILE_ARG \
               -p "127.0.0.1:${PORT}:${PORT}" \
               "$IMAGE"
