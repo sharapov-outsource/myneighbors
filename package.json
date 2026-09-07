@@ -28,7 +28,7 @@
     "@fastify/rate-limit": "^10.2.2",
     "@fastify/static": "^10.1.2",
     "@sharapov/dns-wire": "git+https://github.com/sharapov-outsource/dns-wire.git#v1.0.0",
-    "@sharapov/service-kit": "git+https://github.com/sharapov-outsource/service-kit.git#v1.5.0",
+    "@sharapov/service-kit": "git+https://github.com/sharapov-outsource/service-kit.git#v1.5.1",
     "fastify": "^5.2.1",
     "yaml": "^2.7.0"
   }
